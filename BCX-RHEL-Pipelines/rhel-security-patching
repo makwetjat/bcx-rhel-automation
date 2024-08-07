@@ -1,0 +1,76 @@
+pipeline {
+    agent any
+    environment {
+        SSH_CREDENTIALS_ID = 'ansible-bcx'
+    }
+    parameters {
+        string(name: 'CLIENT_NAME', defaultValue: 'tcenhvbssprd', description: 'Client name prefix for server names')
+        string(name: 'START_INDEX', defaultValue: '1', description: 'Start index for server names')
+        string(name: 'END_INDEX', defaultValue: '1', description: 'End index for server names')
+    }
+    stages {
+        stage('Execute Remote Script') {
+            steps {
+                script {
+                    def clientName = params.CLIENT_NAME
+                    def startIndex = params.START_INDEX.toInteger()
+                    def endIndex = params.END_INDEX.toInteger()
+                    for (int i = startIndex; i <= endIndex; i++) {
+                        def serverName = "${clientName}${i}"
+                        withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                            // Upload script to remote server
+                            sshPut remote: [
+                                name: serverName,
+                                host: serverName,
+                                port: 22,
+                                user: USERNAME,
+                                password: PASSWORD,
+                                allowAnyHosts: true
+                            ], from: 'C:\\ProgramData\\Jenkins\\.scripts\\yum-update.sh', into: '/tmp/yum-update.sh'
+
+                            // Execute the remote command
+                            def result = sshCommand remote: [
+                                name: serverName,
+                                host: serverName,
+                                port: 22,
+                                user: USERNAME,
+                                password: PASSWORD,
+                                allowAnyHosts: true
+                            ], command: 'bash /tmp/yum-update.sh'
+
+                            // Print success message after remote execution
+                            echo "Executed script on ${serverName}"
+                        }
+                        
+                        // Sleep for 1 minute before checking the server status
+                        sleep(time: 1, unit: 'MINUTES')
+                        
+                        // Check if the server is back up using PowerShell from the Jenkins server
+                        powershell(returnStatus: true, script: """
+                            \$retryCount = 50
+                            \$sleepTime = 15
+                            for (\$i = 1; \$i -le \$retryCount; \$i++) {
+                                Write-Host "Checking if server is up... (Attempt \$i)"
+                                try {
+                                    \$result = Test-Connection -ComputerName ${serverName} -Count 1 -Quiet
+                                    if (\$result) {
+                                        Write-Host "Server is back up."
+                                        exit 0
+                                    } else {
+                                        Write-Host "Server is not up yet. Retrying after \$sleepTime seconds."
+                                    }
+                                } catch {
+                                    Write-Host "Error checking server status: \$_"
+                                }
+                                Start-Sleep -Seconds \$sleepTime
+                            }
+                            Write-Host "Server did not come back up after reboot."
+                            exit 1
+                        """)
+                    }
+                }
+            }
+        }
+    }
+}
+
