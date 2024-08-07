@@ -2,7 +2,10 @@
 Automate HPOSS daily tasks 
 # 
 # Procedures - Jenkins Pipelines
-- In the Jenkins folder (create a directory called scripts) e.g C:\ProgramData\Jenkins\.scripts - It will be used to store scripts to run remotely
+- In the Jenkins folder (create a directory called scripts and copy scripts  which you'll execute remotely) 
+
+ e.g Create this C:\ProgramData\Jenkins\.scripts and copy BCX-RHEL-Scripts/{{ScriptName}} to the directory created on jenkins
+
 1. RHEL Security Patching
 - Check BCX-RHEL-Pipelines/rhel-security-patching - It is self explained.
 - You need to use this to create a pipeline that will be used to execute patching on your behalf remotely
