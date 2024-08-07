@@ -1,0 +1,67 @@
+pipeline {
+    agent any
+    environment {
+        SSH_CREDENTIALS_ID = 'ansible-bcx'
+    }
+    parameters {
+        string(name: 'CLIENT_NAME', defaultValue: 'tcenhvbssprd', description: 'Client name prefix for server names')
+        string(name: 'START_INDEX', defaultValue: '1', description: 'Start index for server names')
+        string(name: 'END_INDEX', defaultValue: '1', description: 'End index for server names')
+    }
+    stages {
+        stage('Execute Remote Script') {
+            steps {
+                script {
+                    def clientName = params.CLIENT_NAME
+                    def startIndex = params.START_INDEX.toInteger()
+                    def endIndex = params.END_INDEX.toInteger()
+                    
+                    for (int i = startIndex; i <= endIndex; i++) {
+                        def serverName = "${clientName}${i}"
+                        
+                        withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                            try {
+                                // Upload script to remote server
+                                sshPut remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], from: 'C:\\ProgramData\\Jenkins\\.scripts\\rsyslog-config.sh', into: '/tmp/rsyslog-config.sh'
+                                
+                                // Execute the remote command and capture the result
+                                def result = sshCommand remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], command: 'bash /tmp/rsyslog-config.sh'
+                                
+                                // Print the result for debugging
+                                echo "Result from ${serverName}: ${result}"
+
+                                // Cleanup remote script
+                                sshCommand remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], command: 'rm -f /tmp/rsyslog-config.sh'
+                                
+                            } catch (Exception e) {
+                                echo "Failed to execute script on ${serverName}: ${e.message}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
