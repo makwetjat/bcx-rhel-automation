@@ -40,11 +40,12 @@ pipeline {
                                 allowAnyHosts: true
                             ], command: 'bash /tmp/yum-update.sh'
                             
-                            // Check for specific failure message
-                            def errorMessage = "Yum update failed. Please check the error messages above."
-                            if (result.contains(errorMessage)) {
-                                echo "YUM UPDATE FAILED on ${serverName} !!!! SKIPPING SERVER STATUS CHECK AS ${serverName} IS SKIPPED FOR REBOOT."
-                                echo "NOT PATCHED - MANUALLY GO CHECK THE ISSUE AS INDICATED BY THE ERRORS ABOVE"
+                            // Check for specific failure messages
+                            def yumUpdateErrorMessage = "Yum update failed. Please check the error messages above."
+                            def satelliteErrorMessage = "Server is not registered with the Satellite."
+                            
+                            if (result.contains(yumUpdateErrorMessage) || result.contains(satelliteErrorMessage)) {
+                                echo "Error on ${serverName}: ${result.contains(yumUpdateErrorMessage) ? yumUpdateErrorMessage : satelliteErrorMessage}. Skipping server status check as it might have rebooted or is not registered."
                                 skipStatusCheck = true
                             } else {
                                 // Print success message after remote execution
@@ -90,4 +91,3 @@ pipeline {
         }
     }
 }
-
