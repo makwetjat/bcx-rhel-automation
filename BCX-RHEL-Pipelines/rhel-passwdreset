@@ -1,0 +1,32 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'SERVER_LIST', defaultValue: 'server1,server2,server3', description: 'Comma-separated list of servers')
+        string(name: 'USERNAME', defaultValue: 'user', description: 'Username to reset password')
+        password(name: 'PASSWORD', defaultValue: '', description: 'New password for the user')
+    }
+
+    stages {
+        stage('Reset User Password') {
+            steps {
+                script {
+                    // Split the server list into an array
+                    def servers = SERVER_LIST.split(',')
+
+                    // Loop through each server and reset the password
+                    for (server in servers) {
+                        // Construct the command to reset the password
+                        def command = "echo '${PASSWORD}' | sudo passwd --stdin ${USERNAME}"
+
+                        // Execute the command on the remote server using SSH
+                        sshagent(credentials: ['ansible-bcx']) {
+                            sh "ssh -o StrictHostKeyChecking=no ${USERNAME}@${server} '${command}'"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
