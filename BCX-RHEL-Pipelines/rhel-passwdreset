@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    environment {
+        SSH_CREDENTIALS_ID = 'ansible-bcx'
+    }
+
     parameters {
         string(name: 'SERVER_LIST', defaultValue: 'server1,server2,server3', description: 'Comma-separated list of servers')
         string(name: 'USERNAME', defaultValue: 'user', description: 'Username to reset password')
@@ -19,9 +23,24 @@ pipeline {
                         // Construct the command to reset the password
                         def command = "echo '${PASSWORD}' | sudo passwd --stdin ${USERNAME}"
 
-                        // Execute the command on the remote server using SSH
-                        sshagent(credentials: ['ansible-bcx']) {
-                            sh "ssh -o StrictHostKeyChecking=no ${USERNAME}@${server} '${command}'"
+                        // Use withCredentials to bind the SSH credentials
+                        withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                            try {
+                                // Execute the command on the remote server using SSH
+                                def result = sshCommand remote: [
+                                    name: server,
+                                    host: server,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], command: command
+
+                                echo "Password reset on server: ${server}"
+                            } catch (Exception e) {
+                                echo "Failed to reset password on server: ${server}. Error: ${e.message}"
+                                // Continue to the next server
+                            }
                         }
                     }
                 }
