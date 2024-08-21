@@ -19,36 +19,46 @@ pipeline {
                         def serverName = "${clientName}${i}"
 
                         withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                            // Upload script to remote server
-                            sshPut remote: [
-                                name: serverName,
-                                host: serverName,
-                                port: 22,
-                                user: USERNAME,
-                                password: PASSWORD,
-                                allowAnyHosts: true
-                            ], from: 'C:\\ProgramData\\Jenkins\\.scripts\\auditd-parameters.sh', into: '/tmp/auditd-parameters.sh'
+                            try {
+                                // Upload script to remote server
+                                sshPut remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], from: 'C:\\ProgramData\\Jenkins\\.scripts\\auditd-parameters.sh', into: '/tmp/auditd-parameters.sh'
 
-                            // Execute the remote command and capture the result
-                            def result = sshCommand remote: [
-                                name: serverName,
-                                host: serverName,
-                                port: 22,
-                                user: USERNAME,
-                                password: PASSWORD,
-                                allowAnyHosts: true
-                            ], command: 'bash /tmp/auditd-parameters.sh'
-                            
-                            // Print message if "Updating" is found in the result
-                            if (result.contains("Updating")) {
-                                echo "SERVER ${serverName} auditd's parameters have been updated."
-                            } else {
-                                echo "Executed script on ${serverName} and Config is up to date."
+                                // Execute the remote command and capture the result
+                                def result = sshCommand remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], command: 'bash /tmp/auditd-parameters.sh'
+                                
+                                // Print message if "Updating" is found in the result
+                                if (result.contains("Updating")) {
+                                    echo "SERVER ${serverName} auditd's parameters have been updated."
+                                } else {
+                                    echo "Executed script on ${serverName} and Config is up to date."
+                                }
+                            } catch (Exception e) {
+                                echo "Failed to execute script on ${serverName}: ${e.message}"
+                                currentBuild.result = 'UNSTABLE'
                             }
                         }
                     }
                 }
             }
+        }
+    }
+    post {
+        failure {
+            echo 'Some stages have failed, but the pipeline continued.'
         }
     }
 }
