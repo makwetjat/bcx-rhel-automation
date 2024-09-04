@@ -28,7 +28,7 @@ pipeline {
                                 user: USERNAME,
                                 password: PASSWORD,
                                 allowAnyHosts: true
-                            ], from: 'C:\\ProgramData\\Jenkins\\.scripts\\yum-update.sh', into: '/tmp/yum-update.sh'
+                            ], from: 'BCX-RHEL-Scripts/yum-update.sh', into: '/tmp/yum-update.sh'
 
                             // Execute the remote command and capture the result
                             def result = sshCommand remote: [
