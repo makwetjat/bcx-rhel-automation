@@ -1,0 +1,70 @@
+pipeline {
+    agent any
+    environment {
+        SSH_CREDENTIALS_ID = 'ansible-bcx'
+    }
+    parameters {
+        string(name: 'CLIENT_NAME', defaultValue: 'servername', description: 'Client name prefix for server names')
+        string(name: 'START_INDEX', defaultValue: '1', description: 'Start index for server names')
+        string(name: 'END_INDEX', defaultValue: '3', description: 'End index for server names')
+        string(name: 'ORGINIZATION_NAME', defaultValue: 'Hposs-ONECLOUD', description: 'Org under which the server will be registered on the Satellite')
+        string(name: 'ACTIVATION_KEY', defaultValue: 'BSS', description: 'Key used to register on the Satellite')
+    }
+    stages {
+        stage('Execute Remote Script') {
+            steps {
+                script {
+                    def clientName = params.CLIENT_NAME
+                    def startIndex = params.START_INDEX.toInteger()
+                    def endIndex = params.END_INDEX.toInteger()
+                    def orginizationName = params.ORGINIZATION_NAME
+                    def activationKey = params.ACTIVATION_KEY
+                    
+                    for (int i = startIndex; i <= endIndex; i++) {
+                        def serverName = "${clientName}${i}"
+                        
+                        withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                            try {
+                                // Upload script to remote server
+                                sshPut remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], from: 'C:\\ProgramData\\Jenkins\\.scripts\\rhel-register.sh', into: '/tmp/rhel-register.sh'
+                                
+                                // Execute the remote command and capture the result
+                                def result = sshCommand remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], command: "bash /tmp/rhel-register.sh '${orginizationName}' '${activationKey}'" // Fixed quoting here
+                                
+                                // Print the result for debugging
+                                echo "Result from ${serverName}: ${result}"
+
+                                // Cleanup remote script
+                                sshCommand remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], command: 'rm -f /tmp/rhel-register.sh'
+                                
+                            } catch (Exception e) {
+                                echo "Failed to execute script on ${serverName}: ${e.message}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
