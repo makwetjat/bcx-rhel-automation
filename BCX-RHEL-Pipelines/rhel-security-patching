@@ -20,39 +20,29 @@ pipeline {
                         def skipStatusCheck = false
 
                         withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                            // Upload script to remote server
-                            try {
-                                sshPut remote: [
-                                    name: serverName,
-                                    host: serverName,
-                                    port: 22,
-                                    user: USERNAME,
-                                    password: PASSWORD,
-                                    allowAnyHosts: true
-                                ], from: 'BCX-RHEL-Scripts/yum-update.sh', into: '/tmp/yum-update.sh'
+                            // Transfer the script using scp
+                            sh """
+                                scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null BCX-RHEL-Scripts/yum-update.sh ${USERNAME}@${serverName}:/tmp/yum-update.sh
+                            """
 
-                                // Execute the remote command
-                                def result = sshCommand remote: [
-                                    name: serverName,
-                                    host: serverName,
-                                    port: 22,
-                                    user: USERNAME,
-                                    password: PASSWORD,
-                                    allowAnyHosts: true
-                                ], command: 'bash /tmp/yum-update.sh'
+                            // Execute the script remotely
+                            try {
+                                def result = sh(script: """
+                                    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${USERNAME}@${serverName} 'bash /tmp/yum-update.sh'
+                                """, returnStatus: true)
 
                                 // Check for specific failure messages
                                 def yumUpdateErrorMessage = "Yum update failed. Please check the error messages above."
                                 def satelliteErrorMessage = "Server is not registered with the Satellite."
 
-                                if (result.contains(yumUpdateErrorMessage) || result.contains(satelliteErrorMessage)) {
-                                    echo "Error on ${serverName}: ${result.contains(yumUpdateErrorMessage) ? yumUpdateErrorMessage : satelliteErrorMessage}. Skipping server status check."
+                                if (result != 0) {
+                                    echo "Error on ${serverName}: The yum update failed."
                                     skipStatusCheck = true
                                 } else {
                                     echo "Executed script on ${serverName}"
                                 }
                             } catch (Exception e) {
-                                echo "SSH command or file transfer failed on ${serverName}: ${e.message}"
+                                echo "SSH command failed on ${serverName}: ${e.message}"
                                 skipStatusCheck = true
                             }
                         }
