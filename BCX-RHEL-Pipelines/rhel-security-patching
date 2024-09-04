@@ -21,65 +21,63 @@ pipeline {
 
                         withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                             // Upload script to remote server
-                            sshPut remote: [
-                                name: serverName,
-                                host: serverName,
-                                port: 22,
-                                user: USERNAME,
-                                password: PASSWORD,
-                                allowAnyHosts: true
-                            ], from: 'BCX-RHEL-Scripts/yum-update.sh', into: '/tmp/yum-update.sh'
+                            try {
+                                sshPut remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], from: 'BCX-RHEL-Scripts/yum-update.sh', into: '/tmp/yum-update.sh'
 
-                            // Execute the remote command and capture the result
-                            def result = sshCommand remote: [
-                                name: serverName,
-                                host: serverName,
-                                port: 22,
-                                user: USERNAME,
-                                password: PASSWORD,
-                                allowAnyHosts: true
-                            ], command: 'bash /tmp/yum-update.sh'
-                            
-                            // Check for specific failure messages
-                            def yumUpdateErrorMessage = "Yum update failed. Please check the error messages above."
-                            def satelliteErrorMessage = "Server is not registered with the Satellite."
-                            
-                            if (result.contains(yumUpdateErrorMessage) || result.contains(satelliteErrorMessage)) {
-                                echo "Error on ${serverName}: ${result.contains(yumUpdateErrorMessage) ? yumUpdateErrorMessage : satelliteErrorMessage}. Skipping server status check as it might have rebooted or is not registered."
+                                // Execute the remote command
+                                def result = sshCommand remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], command: 'bash /tmp/yum-update.sh'
+
+                                // Check for specific failure messages
+                                def yumUpdateErrorMessage = "Yum update failed. Please check the error messages above."
+                                def satelliteErrorMessage = "Server is not registered with the Satellite."
+
+                                if (result.contains(yumUpdateErrorMessage) || result.contains(satelliteErrorMessage)) {
+                                    echo "Error on ${serverName}: ${result.contains(yumUpdateErrorMessage) ? yumUpdateErrorMessage : satelliteErrorMessage}. Skipping server status check."
+                                    skipStatusCheck = true
+                                } else {
+                                    echo "Executed script on ${serverName}"
+                                }
+                            } catch (Exception e) {
+                                echo "SSH command or file transfer failed on ${serverName}: ${e.message}"
                                 skipStatusCheck = true
-                            } else {
-                                // Print success message after remote execution
-                                echo "Executed script on ${serverName}"
                             }
                         }
 
                         // Only check server status if yum update did not fail
                         if (!skipStatusCheck) {
-                            // Sleep for 1 minute before checking the server status
                             sleep(time: 1, unit: 'MINUTES')
-                            
-                            // Check if the server is back up using PowerShell from the Jenkins server
-                            def status = powershell(returnStatus: true, script: """
-                                \$retryCount = 50
-                                \$sleepTime = 15
-                                for (\$i = 1; \$i -le \$retryCount; \$i++) {
-                                    Write-Host "Checking if server is up... (Attempt \$i)"
-                                    try {
-                                        \$result = Test-Connection -ComputerName ${serverName} -Count 1 -Quiet
-                                        if (\$result) {
-                                            Write-Host "Server is back up."
-                                            exit 0
-                                        } else {
-                                            Write-Host "Server is not up yet. Retrying after \$sleepTime seconds."
-                                        }
-                                    } catch {
-                                        Write-Host "Error checking server status: \$_"
-                                    }
-                                    Start-Sleep -Seconds \$sleepTime
-                                }
-                                Write-Host "Server did not come back up after reboot."
+
+                            // Check if the server is back up using ping from the Ubuntu machine
+                            def status = sh(script: """
+                                retryCount=50
+                                sleepTime=15
+                                for i in \$(seq 1 \$retryCount); do
+                                    echo "Checking if server is up... (Attempt \$i)"
+                                    if ping -c 1 ${serverName} &> /dev/null; then
+                                        echo "Server is back up."
+                                        exit 0
+                                    else
+                                        echo "Server is not up yet. Retrying after \$sleepTime seconds."
+                                    fi
+                                    sleep \$sleepTime
+                                done
+                                echo "Server did not come back up after reboot."
                                 exit 1
-                            """)
+                            """, returnStatus: true)
 
                             if (status != 0) {
                                 echo "Server ${serverName} did not come back up in the expected time."
