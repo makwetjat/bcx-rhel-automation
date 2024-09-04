@@ -15,20 +15,23 @@ pipeline {
                     def clientName = params.CLIENT_NAME
                     def startIndex = params.START_INDEX.toInteger()
                     def endIndex = params.END_INDEX.toInteger()
+
                     for (int i = startIndex; i <= endIndex; i++) {
                         def serverName = "${clientName}${i}"
-                        def skipStatusCheck = false
+                        def skipExecution = false
 
                         withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                            // Try to SCP the script and run it, but handle errors and continue to the next server
+                            // Try to SCP the script and handle errors without using continue
                             def scpStatus = sh(script: """
                                 scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null BCX-RHEL-Scripts/yum-update.sh ${USERNAME}@${serverName}:/tmp/yum-update.sh
                             """, returnStatus: true)
 
                             if (scpStatus != 0) {
                                 echo "SCP failed on ${serverName}. Skipping execution of script."
-                                continue // Do not execute the script if SCP fails
-                            } else {
+                                skipExecution = true
+                            }
+
+                            if (!skipExecution) {
                                 // Execute the script remotely
                                 def sshStatus = sh(script: """
                                     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${USERNAME}@${serverName} 'bash /tmp/yum-update.sh'
@@ -36,37 +39,37 @@ pipeline {
 
                                 if (sshStatus != 0) {
                                     echo "SSH command failed on ${serverName}. Skipping status check."
-                                    skipStatusCheck = true
+                                    skipExecution = true
                                 } else {
                                     echo "Executed script on ${serverName}"
                                 }
                             }
-                        }
 
-                        // Only check server status if yum update did not fail
-                        if (!skipStatusCheck) {
-                            sleep(time: 1, unit: 'MINUTES')
+                            // Only check server status if the script execution did not fail
+                            if (!skipExecution) {
+                                sleep(time: 1, unit: 'MINUTES')
 
-                            // Check if the server is back up using ping from the Ubuntu machine
-                            def status = sh(script: """
-                                retryCount=50
-                                sleepTime=15
-                                for i in \$(seq 1 \$retryCount); do
-                                    echo "Checking if server is up... (Attempt \$i)"
-                                    if ping -c 1 ${serverName} &> /dev/null; then
-                                        echo "Server is back up."
-                                        exit 0
-                                    else
-                                        echo "Server is not up yet. Retrying after \$sleepTime seconds."
-                                    fi
-                                    sleep \$sleepTime
-                                done
-                                echo "Server did not come back up after reboot."
-                                exit 1
-                            """, returnStatus: true)
+                                // Check if the server is back up using ping from the Ubuntu machine
+                                def status = sh(script: """
+                                    retryCount=50
+                                    sleepTime=15
+                                    for i in \$(seq 1 \$retryCount); do
+                                        echo "Checking if server is up... (Attempt \$i)"
+                                        if ping -c 1 ${serverName} &> /dev/null; then
+                                            echo "Server is back up."
+                                            exit 0
+                                        else
+                                            echo "Server is not up yet. Retrying after \$sleepTime seconds."
+                                        fi
+                                        sleep \$sleepTime
+                                    done
+                                    echo "Server did not come back up after reboot."
+                                    exit 1
+                                """, returnStatus: true)
 
-                            if (status != 0) {
-                                echo "Server ${serverName} did not come back up in the expected time."
+                                if (status != 0) {
+                                    echo "Server ${serverName} did not come back up in the expected time."
+                                }
                             }
                         }
                     }
