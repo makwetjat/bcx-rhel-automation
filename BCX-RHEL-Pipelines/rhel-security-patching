@@ -20,30 +20,31 @@ pipeline {
                         def skipStatusCheck = false
 
                         withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                            // Transfer the script using scp
-                            sh """
-                                scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null BCX-RHEL-Scripts/yum-update.sh ${USERNAME}@${serverName}:/tmp/yum-update.sh
-                            """
-
-                            // Execute the script remotely
+                            // Try to SCP the script and run it, but continue if there's an error
                             try {
-                                def result = sh(script: """
+                                def scpStatus = sh(script: """
+                                    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null BCX-RHEL-Scripts/yum-update.sh ${USERNAME}@${serverName}:/tmp/yum-update.sh
+                                """, returnStatus: true)
+
+                                if (scpStatus != 0) {
+                                    echo "SCP failed on ${serverName}. Skipping execution of script."
+                                    continue
+                                }
+
+                                // Execute the script remotely
+                                def sshStatus = sh(script: """
                                     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${USERNAME}@${serverName} 'bash /tmp/yum-update.sh'
                                 """, returnStatus: true)
 
-                                // Check for specific failure messages
-                                def yumUpdateErrorMessage = "Yum update failed. Please check the error messages above."
-                                def satelliteErrorMessage = "Server is not registered with the Satellite."
-
-                                if (result != 0) {
-                                    echo "Error on ${serverName}: The yum update failed."
+                                if (sshStatus != 0) {
+                                    echo "SSH command failed on ${serverName}. Skipping status check."
                                     skipStatusCheck = true
                                 } else {
                                     echo "Executed script on ${serverName}"
                                 }
                             } catch (Exception e) {
-                                echo "SSH command failed on ${serverName}: ${e.message}"
-                                skipStatusCheck = true
+                                echo "An error occurred on ${serverName}: ${e.message}. Continuing with the next server."
+                                continue
                             }
                         }
 
