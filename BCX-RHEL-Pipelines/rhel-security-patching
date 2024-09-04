@@ -20,45 +20,40 @@ pipeline {
                         def skipStatusCheck = false
 
                         withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                            // Upload script to remote server
-                            sshPut remote: [
-                                name: serverName,
-                                host: serverName,
-                                port: 22,
-                                user: USERNAME,
-                                password: PASSWORD,
-                                allowAnyHosts: true
-                            ], from: 'C:\\ProgramData\\Jenkins\\.scripts\\yum-update.sh', into: '/tmp/yum-update.sh'
+                            try {
+                                // Upload script to remote server
+                                sshPut remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], from: 'C:\\ProgramData\\Jenkins\\.scripts\\yum-update.sh', into: '/tmp/yum-update.sh'
 
-                            // Execute the remote command and capture the result
-                            def result = sshCommand remote: [
-                                name: serverName,
-                                host: serverName,
-                                port: 22,
-                                user: USERNAME,
-                                password: PASSWORD,
-                                allowAnyHosts: true
-                            ], command: 'bash /tmp/yum-update.sh'
-                            
-                            // Check for specific failure messages
-                            def yumUpdateErrorMessage = "Yum update failed. Please check the error messages above."
-                            def satelliteErrorMessage = "Server is not registered with the Satellite."
-                            
-                            if (result.contains(yumUpdateErrorMessage) || result.contains(satelliteErrorMessage)) {
-                                echo "Error on ${serverName}: ${result.contains(yumUpdateErrorMessage) ? yumUpdateErrorMessage : satelliteErrorMessage}. Skipping server status check as it might have rebooted or is not registered."
+                                // Execute the remote command
+                                sshCommand remote: [
+                                    name: serverName,
+                                    host: serverName,
+                                    port: 22,
+                                    user: USERNAME,
+                                    password: PASSWORD,
+                                    allowAnyHosts: true
+                                ], command: 'bash /tmp/yum-update.sh'
+
+                                echo "Executed script successfully on ${serverName}"
+                            } catch (org.hidetake.groovy.ssh.session.BadExitStatusException e) {
+                                echo "Error on ${serverName}: Script execution failed with exit code ${e.status}. Skipping server status check."
                                 skipStatusCheck = true
-                            } else {
-                                // Print success message after remote execution
-                                echo "Executed script on ${serverName}"
+                            } catch (Exception e) {
+                                echo "Error executing on ${serverName}: ${e}. Continuing to next server."
+                                skipStatusCheck = true
                             }
                         }
 
-                        // Only check server status if yum update did not fail
                         if (!skipStatusCheck) {
-                            // Sleep for 1 minute before checking the server status
                             sleep(time: 1, unit: 'MINUTES')
-                            
-                            // Check if the server is back up using PowerShell from the Jenkins server
+
                             def status = powershell(returnStatus: true, script: """
                                 \$retryCount = 50
                                 \$sleepTime = 15
@@ -85,6 +80,9 @@ pipeline {
                                 echo "Server ${serverName} did not come back up in the expected time."
                             }
                         }
+
+                        // Continue to the next server regardless of the result
+                        echo "Moving to the next server..."
                     }
                 }
             }
