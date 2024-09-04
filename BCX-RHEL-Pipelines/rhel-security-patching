@@ -20,17 +20,15 @@ pipeline {
                         def skipStatusCheck = false
 
                         withCredentials([usernamePassword(credentialsId: env.SSH_CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                            // Try to SCP the script and run it, but continue if there's an error
-                            try {
-                                def scpStatus = sh(script: """
-                                    scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null BCX-RHEL-Scripts/yum-update.sh ${USERNAME}@${serverName}:/tmp/yum-update.sh
-                                """, returnStatus: true)
+                            // Try to SCP the script and run it, but handle errors and continue to the next server
+                            def scpStatus = sh(script: """
+                                scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null BCX-RHEL-Scripts/yum-update.sh ${USERNAME}@${serverName}:/tmp/yum-update.sh
+                            """, returnStatus: true)
 
-                                if (scpStatus != 0) {
-                                    echo "SCP failed on ${serverName}. Skipping execution of script."
-                                    continue
-                                }
-
+                            if (scpStatus != 0) {
+                                echo "SCP failed on ${serverName}. Skipping execution of script."
+                                continue // Do not execute the script if SCP fails
+                            } else {
                                 // Execute the script remotely
                                 def sshStatus = sh(script: """
                                     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${USERNAME}@${serverName} 'bash /tmp/yum-update.sh'
@@ -42,9 +40,6 @@ pipeline {
                                 } else {
                                     echo "Executed script on ${serverName}"
                                 }
-                            } catch (Exception e) {
-                                echo "An error occurred on ${serverName}: ${e.message}. Continuing with the next server."
-                                continue
                             }
                         }
 
